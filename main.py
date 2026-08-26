@@ -11,7 +11,6 @@ app.secret_key = 'your-secret-key-change-in-production'  # در محیط واق�
 
 DB_PATH = 'db.db'
 
-# ====== مدیریت دیتابیس ======
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
