@@ -9,13 +9,13 @@ from flask import Flask, request, render_template_string, redirect, url_for, ses
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-in-production'
 
-# ====== نام فایل‌های JSON ======
+# ====== JSON File Names ======
 SETTINGS_FILE = 'settings.json'
 USERS_FILE = 'users.json'
 RESULTS_FILE = 'results.json'
 file_lock = threading.Lock()
 
-# ====== تنظیمات پیش‌فرض ======
+# ====== Default Settings ======
 DEFAULT_SETTINGS = {
     'MODE': 'duration',
     'TOTAL_DATA_GB': '5',
@@ -27,7 +27,7 @@ DEFAULT_SETTINGS = {
     'URL': 'http://192.168.1.1'
 }
 
-# ====== توابع مدیریت فایل‌ها ======
+# ====== File Management Functions ======
 def load_settings():
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
@@ -92,7 +92,7 @@ def get_latest_result():
     results = load_results()
     return results[-1] if results else None
 
-# ====== کد تست بار ======
+# ====== Load Test Core ======
 async def send_request(session, semaphore, req_id, url, data_per_request, timeout, use_post):
     async with semaphore:
         start_time = time.time()
@@ -183,7 +183,7 @@ async def run_test_async(settings):
     throughput = total_bytes_transferred / elapsed_total / (1024**3) if elapsed_total > 0 else 0
 
     save_test_result(start_total, time.time(), ok_count, error_count, total_bytes_transferred, throughput,
-                     details=f"تعداد کل درخواست‌ها: {len(results)}")
+                     details=f"Total requests: {len(results)}")
     return {
         'ok': ok_count,
         'error': error_count,
@@ -193,7 +193,7 @@ async def run_test_async(settings):
         'total_requests': len(results)
     }
 
-# ====== متغیرهای وضعیت تست ======
+# ====== Test Status Variables ======
 test_running = False
 test_result = None
 test_thread = None
@@ -211,147 +211,539 @@ def run_test_in_thread():
     finally:
         test_running = False
 
-# ====== قالب HTML یکپارچه (داشبورد) ======
+# ====== Pelican-Style HTML Template ======
 DASHBOARD_TEMPLATE = '''
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>داشبورد تست بار</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Load Test Dashboard</title>
     <style>
-        body { font-family: sans-serif; direction: rtl; text-align: right; padding: 20px; background: #f5f5f5; }
-        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        .nav { margin-bottom: 20px; }
-        .nav a { margin-left: 15px; color: #2196F3; text-decoration: none; }
-        h1 { color: #333; }
-        .section { border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 5px; background: #fafafa; }
-        .section h2 { margin-top: 0; }
-        .form-group { margin-bottom: 12px; display: flex; align-items: center; }
-        .form-group label { width: 180px; font-weight: bold; }
-        .form-group input, .form-group select { flex: 1; padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; }
-        .form-group input[type="text"] { direction: ltr; text-align: left; }
-        .btn { padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
-        .btn:hover { background: #45a049; }
-        .btn-danger { background: #f44336; }
-        .btn-danger:hover { background: #da190b; }
-        .result-box { background: #e8f5e9; padding: 15px; border-radius: 5px; border-right: 4px solid #4CAF50; }
-        .result-box p { margin: 5px 0; }
-        .error { color: red; }
-        .success { color: green; }
-        .status { padding: 5px 10px; background: #ffeb3b; display: inline-block; border-radius: 4px; }
+        /* === Reset & Base === */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f8f9fa;
+            color: #2d3436;
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+            padding: 40px 45px;
+        }
+
+        /* === Header === */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #f1f2f6;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 26px;
+            font-weight: 600;
+            color: #2d3436;
+            letter-spacing: -0.3px;
+        }
+        .header h1 span {
+            color: #0984e3;
+        }
+        .header .user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .header .user .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #0984e3;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .header .user a {
+            color: #636e72;
+            text-decoration: none;
+            font-size: 14px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            background: #f1f2f6;
+            transition: background 0.2s;
+        }
+        .header .user a:hover {
+            background: #dfe6e9;
+        }
+
+        /* === Cards / Sections === */
+        .card {
+            background: #ffffff;
+            border-radius: 10px;
+            border: 1px solid #ecedef;
+            padding: 24px 28px;
+            margin-bottom: 28px;
+            transition: box-shadow 0.2s;
+        }
+        .card:hover {
+            box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+        }
+        .card-title {
+            font-size: 17px;
+            font-weight: 600;
+            color: #2d3436;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-title .icon {
+            font-size: 20px;
+        }
+
+        /* === Form === */
+        .form-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+        .form-row label {
+            width: 180px;
+            font-weight: 500;
+            font-size: 14px;
+            color: #2d3436;
+        }
+        .form-row input,
+        .form-row select {
+            flex: 1;
+            min-width: 200px;
+            padding: 8px 14px;
+            border: 1px solid #dcdde1;
+            border-radius: 6px;
+            font-size: 14px;
+            background: #fafafa;
+            transition: border-color 0.2s;
+        }
+        .form-row input:focus,
+        .form-row select:focus {
+            outline: none;
+            border-color: #0984e3;
+            background: #ffffff;
+        }
+        .form-row input[type="text"] {
+            direction: ltr;
+            text-align: left;
+        }
+        .form-actions {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        /* === Buttons === */
+        .btn {
+            display: inline-block;
+            padding: 10px 24px;
+            font-size: 15px;
+            font-weight: 500;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            background: #f1f2f6;
+            color: #2d3436;
+        }
+        .btn-primary {
+            background: #0984e3;
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: #0873c7;
+            transform: translateY(-1px);
+        }
+        .btn-success {
+            background: #00b894;
+            color: #fff;
+        }
+        .btn-success:hover {
+            background: #00a381;
+            transform: translateY(-1px);
+        }
+        .btn-danger {
+            background: #e17055;
+            color: #fff;
+        }
+        .btn-danger:hover {
+            background: #d63031;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top: 2px solid #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* === Messages === */
+        .message {
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        .message-success {
+            background: #e8f8f5;
+            color: #00b894;
+            border: 1px solid #b2dfdb;
+        }
+        .message-error {
+            background: #fde8e8;
+            color: #e17055;
+            border: 1px solid #f5c6cb;
+        }
+
+        /* === Result Box === */
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 16px;
+            margin-top: 6px;
+        }
+        .result-item {
+            background: #f8f9fa;
+            padding: 14px 18px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .result-item .value {
+            font-size: 26px;
+            font-weight: 700;
+            color: #2d3436;
+            line-height: 1.2;
+        }
+        .result-item .label {
+            font-size: 13px;
+            color: #636e72;
+            margin-top: 2px;
+        }
+        .result-item .value.green { color: #00b894; }
+        .result-item .value.red { color: #e17055; }
+        .result-item .value.blue { color: #0984e3; }
+        .result-item .value.orange { color: #e17055; }
+
+        /* === Status Badge === */
+        .badge {
+            display: inline-block;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .badge-running {
+            background: #ffeaa7;
+            color: #b7950b;
+        }
+        .badge-idle {
+            background: #dfe6e9;
+            color: #636e72;
+        }
+
+        /* === Login === */
+        .login-box {
+            max-width: 360px;
+            margin: 60px auto;
+            background: #ffffff;
+            padding: 40px 35px;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+        }
+        .login-box h2 {
+            font-weight: 600;
+            margin-bottom: 24px;
+            text-align: center;
+            color: #2d3436;
+        }
+        .login-box input {
+            width: 100%;
+            padding: 10px 14px;
+            margin-bottom: 14px;
+            border: 1px solid #dcdde1;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .login-box input:focus {
+            outline: none;
+            border-color: #0984e3;
+        }
+        .login-box .btn {
+            width: 100%;
+            text-align: center;
+        }
+        .login-box .error {
+            color: #e17055;
+            font-size: 14px;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+
+        /* === Responsive === */
+        @media (max-width: 640px) {
+            .container { padding: 20px; }
+            .form-row { flex-direction: column; align-items: stretch; }
+            .form-row label { width: auto; margin-bottom: 4px; }
+            .form-row input, .form-row select { width: 100%; }
+            .header { flex-direction: column; gap: 12px; }
+            .result-grid { grid-template-columns: 1fr 1fr; }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="nav">
-            <a href="{{ url_for('logout') }}">خروج</a>
-        </div>
-        <h1>📊 داشبورد تست بار</h1>
 
-        <!-- بخش تنظیمات -->
-        <div class="section">
-            <h2>⚙️ تنظیمات</h2>
-            <form method="post" action="/save_settings">
-                {% for key, value in settings.items() %}
-                <div class="form-group">
-                    <label for="{{ key }}">{{ key }}</label>
-                    {% if key == 'USE_POST' %}
-                        <select name="{{ key }}" id="{{ key }}">
-                            <option value="True" {% if value == 'True' %}selected{% endif %}>True</option>
-                            <option value="False" {% if value == 'False' %}selected{% endif %}>False</option>
-                        </select>
-                    {% elif key == 'MODE' %}
-                        <select name="{{ key }}" id="{{ key }}">
-                            <option value="volume" {% if value == 'volume' %}selected{% endif %}>حجمی</option>
-                            <option value="duration" {% if value == 'duration' %}selected{% endif %}>زمانی</option>
-                        </select>
-                    {% else %}
-                        <input type="text" name="{{ key }}" id="{{ key }}" value="{{ value }}">
-                    {% endif %}
-                </div>
-                {% endfor %}
-                <button type="submit" class="btn">💾 ذخیره تنظیمات</button>
-                {% if save_message %}
-                    <span class="success">{{ save_message }}</span>
+<div class="container">
+    <!-- Header -->
+    <div class="header">
+        <h1>⚡ <span>Load</span>Test</h1>
+        <div class="user">
+            <div class="avatar">{{ session['username'][0]|upper }}</div>
+            <span style="font-weight:500; font-size:15px;">{{ session['username'] }}</span>
+            <a href="{{ url_for('logout') }}">Logout</a>
+        </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="card">
+        <div class="card-title"><span class="icon">⚙️</span> Settings</div>
+        <form method="post" action="/save_settings">
+            {% for key, value in settings.items() %}
+            <div class="form-row">
+                <label for="{{ key }}">{{ key }}</label>
+                {% if key == 'USE_POST' %}
+                    <select name="{{ key }}" id="{{ key }}">
+                        <option value="True" {% if value == 'True' %}selected{% endif %}>True</option>
+                        <option value="False" {% if value == 'False' %}selected{% endif %}>False</option>
+                    </select>
+                {% elif key == 'MODE' %}
+                    <select name="{{ key }}" id="{{ key }}">
+                        <option value="volume" {% if value == 'volume' %}selected{% endif %}>Volume</option>
+                        <option value="duration" {% if value == 'duration' %}selected{% endif %}>Duration</option>
+                    </select>
+                {% else %}
+                    <input type="text" name="{{ key }}" id="{{ key }}" value="{{ value }}">
                 {% endif %}
+            </div>
+            {% endfor %}
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">💾 Save Settings</button>
+                {% if save_message %}
+                    <span class="message message-success">{{ save_message }}</span>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- Control -->
+    <div class="card">
+        <div class="card-title"><span class="icon">🚀</span> Control</div>
+        {% if test_running %}
+            <p>
+                <span class="badge badge-running">● Running</span>
+                <span style="margin-left:12px; color:#636e72;">Test is currently in progress...</span>
+            </p>
+            <div style="margin-top:14px;">
+                <button onclick="checkStatus()" class="btn btn-primary">Refresh Status</button>
+                <span id="status-text" style="margin-left:12px; font-size:14px; color:#0984e3;"></span>
+            </div>
+            <script>
+                function checkStatus() {
+                    fetch('/status')
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.running) {
+                                document.getElementById('status-text').textContent = '⏳ Still running...';
+                                setTimeout(checkStatus, 2000);
+                            } else {
+                                window.location.reload();
+                            }
+                        })
+                        .catch(() => {
+                            document.getElementById('status-text').textContent = '⚠️ Error checking status';
+                        });
+                }
+                setTimeout(checkStatus, 1500);
+            </script>
+        {% else %}
+            <form method="post" action="/run_test">
+                <button type="submit" class="btn btn-success">▶️ Start New Test</button>
             </form>
-        </div>
-
-        <!-- بخش کنترل تست -->
-        <div class="section">
-            <h2>🚀 اجرای تست</h2>
-            {% if test_running %}
-                <p><span class="status">⏳ تست در حال اجراست...</span></p>
-                <button onclick="checkStatus()" class="btn">بررسی وضعیت</button>
-                <div id="status"></div>
-                <script>
-                    function checkStatus() {
-                        fetch('/status')
-                            .then(res => res.json())
-                            .then(data => {
-                                if (data.running) {
-                                    document.getElementById('status').innerHTML = 'در حال اجرا...';
-                                    setTimeout(checkStatus, 2000);
-                                } else {
-                                    window.location.reload();
-                                }
-                            });
-                    }
-                    setTimeout(checkStatus, 2000);
-                </script>
-            {% else %}
-                <form method="post" action="/run_test">
-                    <button type="submit" class="btn">▶️ شروع تست جدید</button>
-                </form>
-            {% endif %}
-        </div>
-
-        <!-- بخش نتیجه آخرین تست -->
-        {% if result %}
-        <div class="section result-box">
-            <h2>📈 نتیجه آخرین تست</h2>
-            <p><strong>موفق:</strong> {{ result.ok }}</p>
-            <p><strong>خطا:</strong> {{ result.error }}</p>
-            <p><strong>حجم کل منتقل شده:</strong> {{ "%.3f"|format(result.total_bytes / (1024**3)) }} GB</p>
-            <p><strong>نرخ انتقال:</strong> {{ "%.3f"|format(result.throughput) }} GB/s</p>
-            <p><strong>زمان:</strong> {{ "%.2f"|format(result.elapsed) }} ثانیه</p>
-            <p><strong>تعداد کل درخواست‌ها:</strong> {{ result.total_requests }}</p>
-        </div>
         {% endif %}
     </div>
+
+    <!-- Latest Result -->
+    {% if result %}
+    <div class="card" style="border-color: #b2dfdb; background: #fafffe;">
+        <div class="card-title"><span class="icon">📈</span> Latest Test Result</div>
+        <div class="result-grid">
+            <div class="result-item">
+                <div class="value green">{{ result.ok }}</div>
+                <div class="label">✅ Successful</div>
+            </div>
+            <div class="result-item">
+                <div class="value red">{{ result.error }}</div>
+                <div class="label">❌ Errors</div>
+            </div>
+            <div class="result-item">
+                <div class="value blue">{{ "%.3f"|format(result.total_bytes / (1024**3)) }}</div>
+                <div class="label">📦 Data Transferred (GB)</div>
+            </div>
+            <div class="result-item">
+                <div class="value orange">{{ "%.3f"|format(result.throughput) }}</div>
+                <div class="label">⚡ Throughput (GB/s)</div>
+            </div>
+            <div class="result-item">
+                <div class="value">{{ "%.2f"|format(result.elapsed) }}</div>
+                <div class="label">⏱️ Duration (s)</div>
+            </div>
+            <div class="result-item">
+                <div class="value">{{ result.total_requests }}</div>
+                <div class="label">📨 Total Requests</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
 </body>
 </html>
 '''
 
 LOGIN_TEMPLATE = '''
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>ورود</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - LoadTest</title>
     <style>
-        body { font-family: sans-serif; direction: rtl; text-align: center; padding: 50px; }
-        .login-box { max-width: 300px; margin: auto; border: 1px solid #ccc; padding: 20px; border-radius: 8px; background: white; }
-        input { display: block; width: 100%; padding: 8px; margin: 10px 0; box-sizing: border-box; }
-        button { padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        .error { color: red; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8f9fa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .login-box {
+            background: #ffffff;
+            padding: 40px 35px;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+            width: 100%;
+            max-width: 360px;
+        }
+        .login-box h2 {
+            font-weight: 600;
+            margin-bottom: 8px;
+            text-align: center;
+            color: #2d3436;
+            font-size: 24px;
+        }
+        .login-box .sub {
+            text-align: center;
+            color: #636e72;
+            font-size: 14px;
+            margin-bottom: 28px;
+        }
+        .login-box input {
+            width: 100%;
+            padding: 10px 14px;
+            margin-bottom: 14px;
+            border: 1px solid #dcdde1;
+            border-radius: 6px;
+            font-size: 14px;
+            box-sizing: border-box;
+            background: #fafafa;
+        }
+        .login-box input:focus {
+            outline: none;
+            border-color: #0984e3;
+            background: #fff;
+        }
+        .login-box .btn {
+            width: 100%;
+            padding: 10px;
+            background: #0984e3;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .login-box .btn:hover {
+            background: #0873c7;
+        }
+        .login-box .error {
+            color: #e17055;
+            font-size: 14px;
+            margin-bottom: 14px;
+            text-align: center;
+        }
+        .login-box .footer {
+            text-align: center;
+            margin-top: 18px;
+            font-size: 13px;
+            color: #b2bec3;
+        }
     </style>
 </head>
 <body>
     <div class="login-box">
-        <h2>ورود به داشبورد</h2>
+        <h2>⚡ LoadTest</h2>
+        <div class="sub">Sign in to your account</div>
         {% if error %}
-            <p class="error">{{ error }}</p>
+            <div class="error">{{ error }}</div>
         {% endif %}
         <form method="post" action="/login">
-            <input type="text" name="username" placeholder="نام کاربری" required>
-            <input type="password" name="password" placeholder="رمز عبور" required>
-            <button type="submit">ورود</button>
+            <input type="text" name="username" placeholder="Username" required autofocus>
+            <input type="password" name="password" placeholder="Password" required>
+            <button type="submit" class="btn">Sign In</button>
         </form>
+        <div class="footer">Default: Ziroxishere / Kt@115115</div>
     </div>
 </body>
 </html>
 '''
 
-# ====== مسیرهای Flask ======
+# ====== Flask Routes ======
 @app.route('/')
 def index():
     if 'username' not in session:
@@ -371,7 +763,7 @@ def login():
             session['username'] = username
             return redirect(url_for('index'))
         else:
-            return render_template_string(LOGIN_TEMPLATE, error='نام کاربری یا رمز عبور اشتباه است')
+            return render_template_string(LOGIN_TEMPLATE, error='Invalid username or password')
     return render_template_string(LOGIN_TEMPLATE)
 
 @app.route('/logout')
@@ -380,18 +772,18 @@ def logout():
     return redirect(url_for('login'))
 
 @app.route('/save_settings', methods=['POST'])
-def save_settings_route():  # نام تغییر یافته
+def save_settings_route():
     if 'username' not in session:
         return redirect(url_for('login'))
     settings = load_settings()
     for key in settings.keys():
         if key in request.form:
             settings[key] = request.form[key]
-    save_settings(settings)  # تابع ذخیره‌سازی فایل JSON
+    save_settings(settings)
     result = get_latest_result()
     global test_running
     return render_template_string(DASHBOARD_TEMPLATE, settings=settings, result=result,
-                                   test_running=test_running, save_message='تنظیمات با موفقیت ذخیره شد!')
+                                   test_running=test_running, save_message='Settings saved successfully!')
 
 @app.route('/run_test', methods=['POST'])
 def run_test():
@@ -399,7 +791,7 @@ def run_test():
         return redirect(url_for('login'))
     global test_running, test_thread, test_result
     if test_running:
-        return 'تست در حال اجراست', 400
+        return 'Test is already running', 400
     test_running = True
     test_result = None
     test_thread = threading.Thread(target=run_test_in_thread)
