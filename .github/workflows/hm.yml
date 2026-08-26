@@ -1,4 +1,4 @@
-name: Permanent Linux SSH Server
+name: Python tster
 
 on:
   schedule:
@@ -13,66 +13,7 @@ jobs:
     steps:
       - name: 1. Checkout Repository
         uses: actions/checkout@v4
-
-      # ---------- نصب و راه‌اندازی SSH ----------
-      - name: 2. Setup OpenSSH Server
+      - name: 2. neofetch
         run: |
-          sudo apt-get update
-          sudo apt-get install -y openssh-server
-          sudo systemctl enable ssh
-          sudo systemctl start ssh
-
-          # اجازه‌ی ورود با پسورد (ناامن اما برای آزمایش)
-          sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
-          sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
-          sudo systemctl restart ssh
-
-      # ---------- ایجاد کاربر ----------
-      - name: 3. Create User (cynetadmin)
-        run: |
-          sudo useradd -m -s /bin/bash cynetadmin || true
-          echo "cynetadmin:Cynet@2026" | sudo chpasswd
-          sudo usermod -aG sudo cynetadmin
-          echo "cynetadmin ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/cynetadmin
-
-          # پوشه‌ی کاری
-          sudo mkdir -p /home/cynetadmin/workspace
-          sudo chown -R cynetadmin:cynetadmin /home/cynetadmin/workspace
-
-      # ---------- اتصال به Tailscale (با تنظیم hostname) ----------
-      - name: 4. Connect Tailscale
-        env:
-          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
-        run: |
-          curl -fsSL https://tailscale.com/install.sh | sh
-          # مهم: hostname را به یک نام ساده و بدون کاراکتر خاص تغییر دهید
-          sudo tailscale up --authkey="$TAILSCALE_AUTHKEY" --hostname="cynet-linux"
-
-          TS_IP=$(tailscale ip -4)
-          echo "=================================================="
-          echo "  >>> SSH SERVER IS LIVE! <<<"
-          echo "  Tailscale IP  : $TS_IP"
-          echo "  Username      : cynetadmin"
-          echo "  Password      : Cynet@2026"
-          echo "  ------------------------------------------------"
-          echo "  💻 Connect: ssh cynetadmin@$TS_IP"
-          echo "  💾 Workspace: /home/cynetadmin/workspace"
-          echo "=================================================="
-
-      # ---------- نگهداری سرویس (به روش بهتر) ----------
-      - name: 5. Keep-Alive (5h 55m)
-        run: |
-          # هر ۵ دقیقه یک پیام بده تا لاگ خشک نشود
-          for i in {1..71}; do   # 71 * 5 = 355 دقیقه
-            sleep 300
-            echo "[$i/71] SSH Server is active..."
-          done
-
-      # ---------- ذخیره‌سازی (اختیاری) ----------
-      - name: 6. Save Workspace (Cache)
-        uses: actions/cache@v4
-        if: always()
-        with:
-          path: /home/cynetadmin/workspace
-          key: cynet-workspace-${{ github.run_id }}
-          restore-keys: cynet-workspace-
+          sudo apt install neofetch
+          neofetch
