@@ -1,105 +1,120 @@
-import sqlite3
 import json
 import threading
 import time
 import asyncio
 import aiohttp
+import os
 from flask import Flask, request, render_template_string, redirect, url_for, session, jsonify
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-in-production'  # در محیط واقعی تغییر دهید
 
-DB_PATH = 'db.db'
+# ====== نام فایل‌های JSON ======
+SETTINGS_FILE = 'settings.json'
+USERS_FILE = 'users.json'
+RESULTS_FILE = 'results.json'
 
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+# قفل برای جلوگیری از تداخل در نوشتن همزمان فایل‌ها
+file_lock = threading.Lock()
 
-def init_db():
-    with get_db() as conn:
-        # جدول کاربران
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE,
-                password TEXT
-            )
-        ''')
-        # جدول تنظیمات
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        ''')
-        # جدول نتایج تست
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS test_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                start_time REAL,
-                end_time REAL,
-                ok_count INTEGER,
-                error_count INTEGER,
-                total_bytes INTEGER,
-                throughput REAL,
-                details TEXT
-            )
-        ''')
-        # اضافه کردن کاربر ادمین اگر موجود نیست
-        cur = conn.execute("SELECT * FROM users WHERE username = 'Ziroxishere'")
-        if not cur.fetchone():
-            conn.execute("INSERT INTO users (username, password) VALUES (?, ?)",
-                         ('Ziroxishere', 'Kt@115115'))
-        # تنظیمات پیش‌فرض اگر وجود ندارند
-        default_settings = {
-            'MODE': 'duration',
-            'TOTAL_DATA_GB': '5',
-            'DURATION_SECONDS': '60',
-            'DATA_PER_REQUEST': '1048576',
-            'CONCURRENT_LIMIT': '200',
-            'TIMEOUT': '30',
-            'USE_POST': 'False',
-            'URL': 'http://192.168.1.1'
-        }
-        for key, val in default_settings.items():
-            cur = conn.execute("SELECT * FROM settings WHERE key = ?", (key,))
-            if not cur.fetchone():
-                conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (key, val))
-        conn.commit()
+# ====== مدیریت فایل JSON برای تنظیمات ======
+DEFAULT_SETTINGS = {
+    'MODE': 'duration',
+    'TOTAL_DATA_GB': '5',
+    'DURATION_SECONDS': '60',
+    'DATA_PER_REQUEST': '1048576',
+    'CONCURRENT_LIMIT': '200',
+    'TIMEOUT': '30',
+    'USE_POST': 'False',
+    'URL': 'http://192.168.1.1'
+}
+
+def load_settings():
+    if os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    else:
+        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(DEFAULT_SETTINGS, f, indent=4, ensure_ascii=False)
+        return DEFAULT_SETTINGS.copy()
+
+def save_settings(settings):
+    with file_lock:
+        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, indent=4, ensure_ascii=False)
 
 def get_setting(key):
-    with get_db() as conn:
-        cur = conn.execute("SELECT value FROM settings WHERE key = ?", (key,))
-        row = cur.fetchone()
-        return row['value'] if row else None
+    settings = load_settings()
+    return settings.get(key)
 
 def set_setting(key, value):
-    with get_db() as conn:
-        conn.execute("REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
-        conn.commit()
+    settings = load_settings()
+    settings[key] = value
+    save_settings(settings)
 
 def get_all_settings():
-    with get_db() as conn:
-        cur = conn.execute("SELECT key, value FROM settings")
-        return {row['key']: row['value'] for row in cur.fetchall()}
+    return load_settings()
+
+# ====== مدیریت فایل JSON برای کاربران ======
+DEFAULT_USERS = [
+    {"username": "Ziroxishere", "password": "Kt@115115"}
+]
+
+def load_users():
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    else:
+        with open(USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(DEFAULT_USERS, f, indent=4, ensure_ascii=False)
+        return DEFAULT_USERS.copy()
+
+def save_users(users):
+    with file_lock:
+        with open(USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(users, f, indent=4, ensure_ascii=False)
+
+def find_user(username, password):
+    users = load_users()
+    for user in users:
+        if user['username'] == username and user['password'] == password:
+            return user
+    return None
+
+# ====== مدیریت فایل JSON برای نتایج تست ======
+def load_results():
+    if os.path.exists(RESULTS_FILE):
+        with open(RESULTS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    else:
+        return []
+
+def save_results(results):
+    with file_lock:
+        with open(RESULTS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(results, f, indent=4, ensure_ascii=False)
 
 def save_test_result(start_time, end_time, ok_count, error_count, total_bytes, throughput, details=''):
-    with get_db() as conn:
-        conn.execute('''
-            INSERT INTO test_results (start_time, end_time, ok_count, error_count, total_bytes, throughput, details)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (start_time, end_time, ok_count, error_count, total_bytes, throughput, details))
-        conn.commit()
+    results = load_results()
+    result_entry = {
+        'start_time': start_time,
+        'end_time': end_time,
+        'ok_count': ok_count,
+        'error_count': error_count,
+        'total_bytes': total_bytes,
+        'throughput': throughput,
+        'details': details
+    }
+    results.append(result_entry)
+    save_results(results)
 
 def get_latest_result():
-    with get_db() as conn:
-        cur = conn.execute('''
-            SELECT * FROM test_results ORDER BY id DESC LIMIT 1
-        ''')
-        return cur.fetchone()
+    results = load_results()
+    if results:
+        return results[-1]
+    return None
 
-# ====== کد تست بار (همان اسکریپت قبلی با تغییرات جزئی) ======
+# ====== کد تست بار (همان اسکریپت قبلی) ======
 async def send_request(session, semaphore, req_id, url, data_per_request, timeout, use_post):
     async with semaphore:
         start_time = time.time()
@@ -378,9 +393,7 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        with get_db() as conn:
-            cur = conn.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
-            user = cur.fetchone()
+        user = find_user(username, password)
         if user:
             session['username'] = username
             return redirect(url_for('index'))
@@ -398,11 +411,15 @@ def settings():
     if 'username' not in session:
         return redirect(url_for('login'))
     if request.method == 'POST':
+        settings_dict = {}
         for key in ['MODE', 'TOTAL_DATA_GB', 'DURATION_SECONDS', 'DATA_PER_REQUEST',
                     'CONCURRENT_LIMIT', 'TIMEOUT', 'USE_POST', 'URL']:
             value = request.form.get(key)
             if value is not None:
-                set_setting(key, value)
+                settings_dict[key] = value
+        current = get_all_settings()
+        current.update(settings_dict)
+        save_settings(current)
         return render_template_string(SETTINGS_TEMPLATE, settings=get_all_settings(), message='تنظیمات ذخیره شد')
     return render_template_string(SETTINGS_TEMPLATE, settings=get_all_settings(), message=None)
 
@@ -425,5 +442,8 @@ def status():
     return jsonify(running=test_running, result=test_result)
 
 if __name__ == '__main__':
-    init_db()
+    # در صورت نبودن فایل‌ها، با دیتای پیش‌فرض ساخته می‌شوند
+    load_settings()
+    load_users()
+    load_results()
     app.run(debug=True, host='0.0.0.0', port=5000)
