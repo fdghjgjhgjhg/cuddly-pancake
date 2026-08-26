@@ -1,0 +1,9 @@
+# تنظیمات اسکریپت تست بار
+MODE = duration
+TOTAL_DATA_GB = 120
+DURATION_SECONDS = 60
+DATA_PER_REQUEST = 1048576
+CONCURRENT_LIMIT = 200
+TIMEOUT = 30
+USE_POST = False
+URL = https://test.dstat.one
