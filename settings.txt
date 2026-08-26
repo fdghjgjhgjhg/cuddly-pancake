@@ -6,4 +6,4 @@ DATA_PER_REQUEST = 1048576
 CONCURRENT_LIMIT = 300
 TIMEOUT = 30
 USE_POST = False
-URL = https://moonxcraft.ir
+URL = https://mehts.ir
