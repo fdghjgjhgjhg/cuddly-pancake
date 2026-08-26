@@ -380,15 +380,14 @@ def logout():
     return redirect(url_for('login'))
 
 @app.route('/save_settings', methods=['POST'])
-def save_settings():
+def save_settings_route():  # نام تغییر یافته
     if 'username' not in session:
         return redirect(url_for('login'))
     settings = load_settings()
     for key in settings.keys():
         if key in request.form:
             settings[key] = request.form[key]
-    save_settings(settings)
-    # بازگرداندن صفحه با پیام ذخیره
+    save_settings(settings)  # تابع ذخیره‌سازی فایل JSON
     result = get_latest_result()
     global test_running
     return render_template_string(DASHBOARD_TEMPLATE, settings=settings, result=result,
@@ -413,7 +412,6 @@ def status():
     return jsonify(running=test_running, result=test_result)
 
 if __name__ == '__main__':
-    # ایجاد فایل‌های پیش‌فرض در صورت عدم وجود
     load_settings()
     load_users()
     load_results()
