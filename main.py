@@ -90,7 +90,37 @@ def save_test_result(start_time, end_time, ok_count, error_count, total_bytes, t
 
 def get_latest_result():
     results = load_results()
-    return results[-1] if results else None
+    if results:
+        latest = results[-1]
+        # Ensure all keys exist (for backward compatibility)
+        required_keys = ['ok_count', 'error_count', 'total_bytes', 'throughput', 'details']
+        # Map old keys to new ones if needed
+        if 'ok' not in latest and 'ok_count' in latest:
+            latest['ok'] = latest['ok_count']
+        if 'error' not in latest and 'error_count' in latest:
+            latest['error'] = latest['error_count']
+        if 'elapsed' not in latest and 'start_time' in latest and 'end_time' in latest:
+            latest['elapsed'] = latest['end_time'] - latest['start_time']
+        if 'total_requests' not in latest and 'details' in latest:
+            # Try to parse from details string
+            try:
+                import re
+                match = re.search(r'Total requests: (\d+)', latest['details'])
+                if match:
+                    latest['total_requests'] = int(match.group(1))
+                else:
+                    latest['total_requests'] = latest.get('ok', 0) + latest.get('error', 0)
+            except:
+                latest['total_requests'] = latest.get('ok', 0) + latest.get('error', 0)
+        # Ensure default values
+        latest.setdefault('ok', 0)
+        latest.setdefault('error', 0)
+        latest.setdefault('total_bytes', 0)
+        latest.setdefault('throughput', 0)
+        latest.setdefault('elapsed', 0)
+        latest.setdefault('total_requests', 0)
+        return latest
+    return None
 
 # ====== Load Test Core ======
 async def send_request(session, semaphore, req_id, url, data_per_request, timeout, use_post):
@@ -182,9 +212,8 @@ async def run_test_async(settings):
 
     throughput = total_bytes_transferred / elapsed_total / (1024**3) if elapsed_total > 0 else 0
 
-    save_test_result(start_total, time.time(), ok_count, error_count, total_bytes_transferred, throughput,
-                     details=f"Total requests: {len(results)}")
-    return {
+    # Prepare result dict with all needed fields
+    result_data = {
         'ok': ok_count,
         'error': error_count,
         'total_bytes': total_bytes_transferred,
@@ -192,6 +221,9 @@ async def run_test_async(settings):
         'elapsed': elapsed_total,
         'total_requests': len(results)
     }
+    save_test_result(start_total, time.time(), ok_count, error_count, total_bytes_transferred, throughput,
+                     details=f"Total requests: {len(results)}")
+    return result_data
 
 # ====== Test Status Variables ======
 test_running = False
@@ -609,27 +641,27 @@ DASHBOARD_TEMPLATE = '''
         <div class="card-title"><span class="icon">📈</span> Latest Test Result</div>
         <div class="result-grid">
             <div class="result-item">
-                <div class="value green">{{ result.ok }}</div>
+                <div class="value green">{{ result.get('ok', 0) }}</div>
                 <div class="label">✅ Successful</div>
             </div>
             <div class="result-item">
-                <div class="value red">{{ result.error }}</div>
+                <div class="value red">{{ result.get('error', 0) }}</div>
                 <div class="label">❌ Errors</div>
             </div>
             <div class="result-item">
-                <div class="value blue">{{ "%.3f"|format(result.total_bytes / (1024**3)) }}</div>
+                <div class="value blue">{{ "%.3f"|format(result.get('total_bytes', 0) / (1024**3)) }}</div>
                 <div class="label">📦 Data Transferred (GB)</div>
             </div>
             <div class="result-item">
-                <div class="value orange">{{ "%.3f"|format(result.throughput) }}</div>
+                <div class="value orange">{{ "%.3f"|format(result.get('throughput', 0)) }}</div>
                 <div class="label">⚡ Throughput (GB/s)</div>
             </div>
             <div class="result-item">
-                <div class="value">{{ "%.2f"|format(result.elapsed) }}</div>
+                <div class="value">{{ "%.2f"|format(result.get('elapsed', 0)) }}</div>
                 <div class="label">⏱️ Duration (s)</div>
             </div>
             <div class="result-item">
-                <div class="value">{{ result.total_requests }}</div>
+                <div class="value">{{ result.get('total_requests', 0) }}</div>
                 <div class="label">📨 Total Requests</div>
             </div>
         </div>
