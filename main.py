@@ -7,17 +7,15 @@ import os
 from flask import Flask, request, render_template_string, redirect, url_for, session, jsonify
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-change-in-production'  # در محیط واقعی تغییر دهید
+app.secret_key = 'your-secret-key-change-in-production'
 
 # ====== نام فایل‌های JSON ======
 SETTINGS_FILE = 'settings.json'
 USERS_FILE = 'users.json'
 RESULTS_FILE = 'results.json'
-
-# قفل برای جلوگیری از تداخل در نوشتن همزمان فایل‌ها
 file_lock = threading.Lock()
 
-# ====== مدیریت فایل JSON برای تنظیمات ======
+# ====== تنظیمات پیش‌فرض ======
 DEFAULT_SETTINGS = {
     'MODE': 'duration',
     'TOTAL_DATA_GB': '5',
@@ -29,6 +27,7 @@ DEFAULT_SETTINGS = {
     'URL': 'http://192.168.1.1'
 }
 
+# ====== توابع مدیریت فایل‌ها ======
 def load_settings():
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
@@ -43,31 +42,15 @@ def save_settings(settings):
         with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
             json.dump(settings, f, indent=4, ensure_ascii=False)
 
-def get_setting(key):
-    settings = load_settings()
-    return settings.get(key)
-
-def set_setting(key, value):
-    settings = load_settings()
-    settings[key] = value
-    save_settings(settings)
-
-def get_all_settings():
-    return load_settings()
-
-# ====== مدیریت فایل JSON برای کاربران ======
-DEFAULT_USERS = [
-    {"username": "Ziroxishere", "password": "Kt@115115"}
-]
-
 def load_users():
     if os.path.exists(USERS_FILE):
         with open(USERS_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     else:
+        default = [{"username": "Ziroxishere", "password": "Kt@115115"}]
         with open(USERS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(DEFAULT_USERS, f, indent=4, ensure_ascii=False)
-        return DEFAULT_USERS.copy()
+            json.dump(default, f, indent=4, ensure_ascii=False)
+        return default
 
 def save_users(users):
     with file_lock:
@@ -75,13 +58,11 @@ def save_users(users):
             json.dump(users, f, indent=4, ensure_ascii=False)
 
 def find_user(username, password):
-    users = load_users()
-    for user in users:
+    for user in load_users():
         if user['username'] == username and user['password'] == password:
             return user
     return None
 
-# ====== مدیریت فایل JSON برای نتایج تست ======
 def load_results():
     if os.path.exists(RESULTS_FILE):
         with open(RESULTS_FILE, 'r', encoding='utf-8') as f:
@@ -96,7 +77,7 @@ def save_results(results):
 
 def save_test_result(start_time, end_time, ok_count, error_count, total_bytes, throughput, details=''):
     results = load_results()
-    result_entry = {
+    results.append({
         'start_time': start_time,
         'end_time': end_time,
         'ok_count': ok_count,
@@ -104,17 +85,14 @@ def save_test_result(start_time, end_time, ok_count, error_count, total_bytes, t
         'total_bytes': total_bytes,
         'throughput': throughput,
         'details': details
-    }
-    results.append(result_entry)
+    })
     save_results(results)
 
 def get_latest_result():
     results = load_results()
-    if results:
-        return results[-1]
-    return None
+    return results[-1] if results else None
 
-# ====== کد تست بار (همان اسکریپت قبلی) ======
+# ====== کد تست بار ======
 async def send_request(session, semaphore, req_id, url, data_per_request, timeout, use_post):
     async with semaphore:
         start_time = time.time()
@@ -149,7 +127,7 @@ async def run_test_async(settings):
         total_data_gb = float(settings['TOTAL_DATA_GB'])
         total_bytes = int(total_data_gb * 1024**3)
         total_requests = (total_bytes + data_per_request - 1) // data_per_request
-    else:  # duration
+    else:
         duration_seconds = int(settings['DURATION_SECONDS'])
 
     semaphore = asyncio.Semaphore(concurrent_limit)
@@ -215,7 +193,7 @@ async def run_test_async(settings):
         'total_requests': len(results)
     }
 
-# متغیرهای سراسری برای وضعیت تست
+# ====== متغیرهای وضعیت تست ======
 test_running = False
 test_result = None
 test_thread = None
@@ -223,7 +201,7 @@ test_thread = None
 def run_test_in_thread():
     global test_running, test_result
     try:
-        settings = get_all_settings()
+        settings = load_settings()
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         result = loop.run_until_complete(run_test_async(settings))
@@ -233,118 +211,111 @@ def run_test_in_thread():
     finally:
         test_running = False
 
-# ====== قالب‌های HTML (جاسازی‌شده در کد) ======
-HTML_TEMPLATE = '''
+# ====== قالب HTML یکپارچه (داشبورد) ======
+DASHBOARD_TEMPLATE = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>پنل تست بار</title>
+    <title>داشبورد تست بار</title>
     <style>
-        body { font-family: sans-serif; direction: rtl; text-align: right; padding: 20px; }
-        .container { max-width: 800px; margin: auto; }
-        .form-group { margin-bottom: 10px; }
-        label { display: inline-block; width: 150px; }
-        input, select { padding: 5px; width: 200px; }
-        button { padding: 10px 20px; background: #4CAF50; color: white; border: none; cursor: pointer; }
+        body { font-family: sans-serif; direction: rtl; text-align: right; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .nav { margin-bottom: 20px; }
+        .nav a { margin-left: 15px; color: #2196F3; text-decoration: none; }
+        h1 { color: #333; }
+        .section { border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 5px; background: #fafafa; }
+        .section h2 { margin-top: 0; }
+        .form-group { margin-bottom: 12px; display: flex; align-items: center; }
+        .form-group label { width: 180px; font-weight: bold; }
+        .form-group input, .form-group select { flex: 1; padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; }
+        .form-group input[type="text"] { direction: ltr; text-align: left; }
+        .btn { padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        .btn:hover { background: #45a049; }
+        .btn-danger { background: #f44336; }
+        .btn-danger:hover { background: #da190b; }
+        .result-box { background: #e8f5e9; padding: 15px; border-radius: 5px; border-right: 4px solid #4CAF50; }
+        .result-box p { margin: 5px 0; }
         .error { color: red; }
         .success { color: green; }
-        .result-box { border: 1px solid #ccc; padding: 10px; margin-top: 20px; }
-        .nav { margin-bottom: 20px; }
-        .nav a { margin-left: 10px; }
+        .status { padding: 5px 10px; background: #ffeb3b; display: inline-block; border-radius: 4px; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="nav">
-            <a href="{{ url_for('settings') }}">تنظیمات</a>
             <a href="{{ url_for('logout') }}">خروج</a>
         </div>
-        <h1>پنل تست بار</h1>
-        {% if test_running %}
-            <p>تست در حال اجراست...</p>
-            <button onclick="checkStatus()">بررسی وضعیت</button>
-            <div id="status"></div>
-            <script>
-                function checkStatus() {
-                    fetch('/status')
-                        .then(res => res.json())
-                        .then(data => {
-                            if (data.running) {
-                                document.getElementById('status').innerHTML = 'در حال اجرا...';
-                            } else {
-                                window.location.reload();
-                            }
-                        });
-                }
-                setTimeout(checkStatus, 3000);
-            </script>
-        {% else %}
-            {% if result %}
-                <div class="result-box">
-                    <h3>نتیجه آخرین تست</h3>
-                    <p>موفق: {{ result.ok }}</p>
-                    <p>خطا: {{ result.error }}</p>
-                    <p>حجم کل منتقل شده: {{ "%.3f"|format(result.total_bytes / (1024**3)) }} GB</p>
-                    <p>نرخ انتقال: {{ "%.3f"|format(result.throughput) }} GB/s</p>
-                    <p>زمان: {{ "%.2f"|format(result.elapsed) }} ثانیه</p>
-                    <p>تعداد کل درخواست‌ها: {{ result.total_requests }}</p>
-                </div>
-            {% endif %}
-            <form action="/run_test" method="post">
-                <button type="submit">شروع تست جدید</button>
-            </form>
-        {% endif %}
-    </div>
-</body>
-</html>
-'''
+        <h1>📊 داشبورد تست بار</h1>
 
-SETTINGS_TEMPLATE = '''
-<!DOCTYPE html>
-<html>
-<head>
-    <title>تنظیمات</title>
-    <style>
-        body { font-family: sans-serif; direction: rtl; text-align: right; padding: 20px; }
-        .container { max-width: 600px; margin: auto; }
-        .form-group { margin-bottom: 10px; }
-        label { display: inline-block; width: 150px; }
-        input, select { padding: 5px; width: 200px; }
-        button { padding: 10px 20px; background: #4CAF50; color: white; border: none; cursor: pointer; }
-        .nav { margin-bottom: 20px; }
-        .nav a { margin-left: 10px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="nav">
-            <a href="{{ url_for('index') }}">خانه</a>
-            <a href="{{ url_for('logout') }}">خروج</a>
-        </div>
-        <h1>تنظیمات</h1>
-        <form method="post">
-            {% for key, value in settings.items() %}
-            <div class="form-group">
-                <label for="{{ key }}">{{ key }}</label>
-                {% if key == 'USE_POST' %}
-                    <select name="{{ key }}" id="{{ key }}">
-                        <option value="True" {% if value == 'True' %}selected{% endif %}>True</option>
-                        <option value="False" {% if value == 'False' %}selected{% endif %}>False</option>
-                    </select>
-                {% elif key == 'MODE' %}
-                    <select name="{{ key }}" id="{{ key }}">
-                        <option value="volume" {% if value == 'volume' %}selected{% endif %}>حجمی</option>
-                        <option value="duration" {% if value == 'duration' %}selected{% endif %}>زمانی</option>
-                    </select>
-                {% else %}
-                    <input type="text" name="{{ key }}" id="{{ key }}" value="{{ value }}">
+        <!-- بخش تنظیمات -->
+        <div class="section">
+            <h2>⚙️ تنظیمات</h2>
+            <form method="post" action="/save_settings">
+                {% for key, value in settings.items() %}
+                <div class="form-group">
+                    <label for="{{ key }}">{{ key }}</label>
+                    {% if key == 'USE_POST' %}
+                        <select name="{{ key }}" id="{{ key }}">
+                            <option value="True" {% if value == 'True' %}selected{% endif %}>True</option>
+                            <option value="False" {% if value == 'False' %}selected{% endif %}>False</option>
+                        </select>
+                    {% elif key == 'MODE' %}
+                        <select name="{{ key }}" id="{{ key }}">
+                            <option value="volume" {% if value == 'volume' %}selected{% endif %}>حجمی</option>
+                            <option value="duration" {% if value == 'duration' %}selected{% endif %}>زمانی</option>
+                        </select>
+                    {% else %}
+                        <input type="text" name="{{ key }}" id="{{ key }}" value="{{ value }}">
+                    {% endif %}
+                </div>
+                {% endfor %}
+                <button type="submit" class="btn">💾 ذخیره تنظیمات</button>
+                {% if save_message %}
+                    <span class="success">{{ save_message }}</span>
                 {% endif %}
-            </div>
-            {% endfor %}
-            <button type="submit">ذخیره تنظیمات</button>
-        </form>
-        {% if message %}
-            <p class="success">{{ message }}</p>
+            </form>
+        </div>
+
+        <!-- بخش کنترل تست -->
+        <div class="section">
+            <h2>🚀 اجرای تست</h2>
+            {% if test_running %}
+                <p><span class="status">⏳ تست در حال اجراست...</span></p>
+                <button onclick="checkStatus()" class="btn">بررسی وضعیت</button>
+                <div id="status"></div>
+                <script>
+                    function checkStatus() {
+                        fetch('/status')
+                            .then(res => res.json())
+                            .then(data => {
+                                if (data.running) {
+                                    document.getElementById('status').innerHTML = 'در حال اجرا...';
+                                    setTimeout(checkStatus, 2000);
+                                } else {
+                                    window.location.reload();
+                                }
+                            });
+                    }
+                    setTimeout(checkStatus, 2000);
+                </script>
+            {% else %}
+                <form method="post" action="/run_test">
+                    <button type="submit" class="btn">▶️ شروع تست جدید</button>
+                </form>
+            {% endif %}
+        </div>
+
+        <!-- بخش نتیجه آخرین تست -->
+        {% if result %}
+        <div class="section result-box">
+            <h2>📈 نتیجه آخرین تست</h2>
+            <p><strong>موفق:</strong> {{ result.ok }}</p>
+            <p><strong>خطا:</strong> {{ result.error }}</p>
+            <p><strong>حجم کل منتقل شده:</strong> {{ "%.3f"|format(result.total_bytes / (1024**3)) }} GB</p>
+            <p><strong>نرخ انتقال:</strong> {{ "%.3f"|format(result.throughput) }} GB/s</p>
+            <p><strong>زمان:</strong> {{ "%.2f"|format(result.elapsed) }} ثانیه</p>
+            <p><strong>تعداد کل درخواست‌ها:</strong> {{ result.total_requests }}</p>
+        </div>
         {% endif %}
     </div>
 </body>
@@ -358,15 +329,15 @@ LOGIN_TEMPLATE = '''
     <title>ورود</title>
     <style>
         body { font-family: sans-serif; direction: rtl; text-align: center; padding: 50px; }
-        .login-box { max-width: 300px; margin: auto; border: 1px solid #ccc; padding: 20px; }
-        input { display: block; width: 100%; padding: 8px; margin: 10px 0; }
-        button { padding: 10px 20px; background: #4CAF50; color: white; border: none; }
+        .login-box { max-width: 300px; margin: auto; border: 1px solid #ccc; padding: 20px; border-radius: 8px; background: white; }
+        input { display: block; width: 100%; padding: 8px; margin: 10px 0; box-sizing: border-box; }
+        button { padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }
         .error { color: red; }
     </style>
 </head>
 <body>
     <div class="login-box">
-        <h2>ورود</h2>
+        <h2>ورود به داشبورد</h2>
         {% if error %}
             <p class="error">{{ error }}</p>
         {% endif %}
@@ -385,16 +356,18 @@ LOGIN_TEMPLATE = '''
 def index():
     if 'username' not in session:
         return redirect(url_for('login'))
-    global test_running, test_result
-    return render_template_string(HTML_TEMPLATE, test_running=test_running, result=test_result)
+    settings = load_settings()
+    result = get_latest_result()
+    global test_running
+    return render_template_string(DASHBOARD_TEMPLATE, settings=settings, result=result,
+                                   test_running=test_running, save_message=None)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        user = find_user(username, password)
-        if user:
+        if find_user(username, password):
             session['username'] = username
             return redirect(url_for('index'))
         else:
@@ -406,22 +379,20 @@ def logout():
     session.pop('username', None)
     return redirect(url_for('login'))
 
-@app.route('/settings', methods=['GET', 'POST'])
-def settings():
+@app.route('/save_settings', methods=['POST'])
+def save_settings():
     if 'username' not in session:
         return redirect(url_for('login'))
-    if request.method == 'POST':
-        settings_dict = {}
-        for key in ['MODE', 'TOTAL_DATA_GB', 'DURATION_SECONDS', 'DATA_PER_REQUEST',
-                    'CONCURRENT_LIMIT', 'TIMEOUT', 'USE_POST', 'URL']:
-            value = request.form.get(key)
-            if value is not None:
-                settings_dict[key] = value
-        current = get_all_settings()
-        current.update(settings_dict)
-        save_settings(current)
-        return render_template_string(SETTINGS_TEMPLATE, settings=get_all_settings(), message='تنظیمات ذخیره شد')
-    return render_template_string(SETTINGS_TEMPLATE, settings=get_all_settings(), message=None)
+    settings = load_settings()
+    for key in settings.keys():
+        if key in request.form:
+            settings[key] = request.form[key]
+    save_settings(settings)
+    # بازگرداندن صفحه با پیام ذخیره
+    result = get_latest_result()
+    global test_running
+    return render_template_string(DASHBOARD_TEMPLATE, settings=settings, result=result,
+                                   test_running=test_running, save_message='تنظیمات با موفقیت ذخیره شد!')
 
 @app.route('/run_test', methods=['POST'])
 def run_test():
@@ -442,7 +413,7 @@ def status():
     return jsonify(running=test_running, result=test_result)
 
 if __name__ == '__main__':
-    # در صورت نبودن فایل‌ها، با دیتای پیش‌فرض ساخته می‌شوند
+    # ایجاد فایل‌های پیش‌فرض در صورت عدم وجود
     load_settings()
     load_users()
     load_results()
