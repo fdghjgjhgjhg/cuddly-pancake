@@ -1,10 +1,8 @@
-import json
 import threading
 import time
 import asyncio
 import aiohttp
 import os
-import requests  # <-- اضافه شد
 from flask import Flask, request, render_template_string, redirect, url_for, session, jsonify
 
 app = Flask(__name__)
@@ -94,6 +92,8 @@ def get_latest_result():
     if results:
         latest = results[-1]
         # Ensure all keys exist (for backward compatibility)
+        required_keys = ['ok_count', 'error_count', 'total_bytes', 'throughput', 'details']
+        # Map old keys to new ones if needed
         if 'ok' not in latest and 'ok_count' in latest:
             latest['ok'] = latest['ok_count']
         if 'error' not in latest and 'error_count' in latest:
@@ -101,6 +101,7 @@ def get_latest_result():
         if 'elapsed' not in latest and 'start_time' in latest and 'end_time' in latest:
             latest['elapsed'] = latest['end_time'] - latest['start_time']
         if 'total_requests' not in latest and 'details' in latest:
+            # Try to parse from details string
             try:
                 import re
                 match = re.search(r'Total requests: (\d+)', latest['details'])
@@ -110,6 +111,7 @@ def get_latest_result():
                     latest['total_requests'] = latest.get('ok', 0) + latest.get('error', 0)
             except:
                 latest['total_requests'] = latest.get('ok', 0) + latest.get('error', 0)
+        # Ensure default values
         latest.setdefault('ok', 0)
         latest.setdefault('error', 0)
         latest.setdefault('total_bytes', 0)
@@ -118,21 +120,6 @@ def get_latest_result():
         latest.setdefault('total_requests', 0)
         return latest
     return None
-
-# ====== Function to fetch target IP ======
-def fetch_target_ip():
-    """دریافت IP هدف از فایل راه دور"""
-    try:
-        response = requests.get('https://getdown.xo.je/ip.txt', timeout=10)
-        if response.status_code == 200:
-            ip = response.text.strip()
-            # اعتبارسنجی ساده (حداقل شامل نقطه باشد)
-            if ip and '.' in ip:
-                return ip
-        return None
-    except Exception as e:
-        print(f"Error fetching IP: {e}")
-        return None
 
 # ====== Load Test Core ======
 async def send_request(session, semaphore, req_id, url, data_per_request, timeout, use_post):
@@ -224,6 +211,7 @@ async def run_test_async(settings):
 
     throughput = total_bytes_transferred / elapsed_total / (1024**3) if elapsed_total > 0 else 0
 
+    # Prepare result dict with all needed fields
     result_data = {
         'ok': ok_count,
         'error': error_count,
@@ -254,7 +242,7 @@ def run_test_in_thread():
     finally:
         test_running = False
 
-# ====== Pelican-Style HTML Template (modified) ======
+# ====== Pelican-Style HTML Template ======
 DASHBOARD_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="en">
@@ -640,15 +628,9 @@ DASHBOARD_TEMPLATE = '''
                 setTimeout(checkStatus, 1500);
             </script>
         {% else %}
-            <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
-                <form method="post" action="/run_test">
-                    <button type="submit" class="btn btn-success">▶️ Start Test (Auto IP)</button>
-                </form>
-                <form method="post" action="/run_test_custom" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                    <input type="text" name="custom_ip" placeholder="Or enter IP manually" style="padding: 8px 14px; border: 1px solid #dcdde1; border-radius: 6px; font-size: 14px; min-width: 180px;">
-                    <button type="submit" class="btn btn-primary">🔧 Test Custom IP</button>
-                </form>
-            </div>
+            <form method="post" action="/run_test">
+                <button type="submit" class="btn btn-success">▶️ Start New Test</button>
+            </form>
         {% endif %}
     </div>
 
@@ -839,43 +821,8 @@ def run_test():
     if 'username' not in session:
         return redirect(url_for('login'))
     global test_running, test_thread, test_result
-
     if test_running:
         return 'Test is already running', 400
-
-    # دریافت IP از فایل راه دور
-    target_ip = fetch_target_ip()
-    if not target_ip:
-        return '❌ Unable to fetch target IP from https://getdown.xo.je/ip.txt', 400
-
-    # به‌روزرسانی تنظیمات با IP جدید
-    settings = load_settings()
-    settings['URL'] = f'http://{target_ip}'
-    save_settings(settings)
-
-    test_running = True
-    test_result = None
-    test_thread = threading.Thread(target=run_test_in_thread)
-    test_thread.start()
-    return redirect(url_for('index'))
-
-@app.route('/run_test_custom', methods=['POST'])
-def run_test_custom():
-    if 'username' not in session:
-        return redirect(url_for('login'))
-    global test_running, test_thread, test_result
-
-    if test_running:
-        return 'Test is already running', 400
-
-    custom_ip = request.form.get('custom_ip', '').strip()
-    if not custom_ip:
-        return 'Please enter a valid IP', 400
-
-    settings = load_settings()
-    settings['URL'] = f'http://{custom_ip}'
-    save_settings(settings)
-
     test_running = True
     test_result = None
     test_thread = threading.Thread(target=run_test_in_thread)
